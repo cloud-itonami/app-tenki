@@ -1,4 +1,4 @@
 {:schema "etzhayyim.repository/v1"
- :name "com-etzhayyim-app-tenki"
+ :name "app-tenki"
  :kind :app
  :canonical-metadata :edn}
