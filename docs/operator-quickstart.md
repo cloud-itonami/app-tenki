@@ -17,13 +17,14 @@ cd appview/tenki-weather-component/svelte
 npm install
 ```
 
-実測: `added 73 packages, and audited 74 packages in 8s` / `found 0 vulnerabilities`。
+実測（この repo を fresh clone した直後）: `added 72 packages, and audited 73 packages in 7s`
+/ `found 0 vulnerabilities`。
 
 `npm warn allow-scripts` が `esbuild` と `fsevents` について出るが、**これは通してよい**
 —— どちらも postinstall を実行しないまま install が完了し、以降の 3 ステップは
 そのまま通る（実測）。`npm approve-scripts` を走らせる必要は無い。
 
-> `package-lock.json` が無いので、この 73 という数は将来ずれる。
+> `package-lock.json` が無いので、この 72 という数は将来ずれる。
 > 数が違っても step 2〜4 が通れば問題ない。
 
 ## step 2 — test
@@ -94,7 +95,7 @@ MCP エンドポイント（`POST /api/mcp`）と Open-Meteo 連携は `PROJECT.
 |---|---|
 | `tailwind.config.js` を削除 | 1 行目で `@etzhayyim/design-system/plugin` を import していたが、この package は `package.json` に無く npm にも無い（404）。`content` glob も抽出前の monorepo パス `../../../../../packages/ts/design-system/dist/**` を指していて解決しない |
 | `postcss.config.js` を削除 | `tailwindcss` を読み込むためだけの設定。上を消すと役目が無い |
-| `package.json` から `tailwindcss` / `autoprefixer` / `postcss` を削除 | 設定を消したので未使用。install が 145 → 73 packages に減った |
+| `package.json` から `tailwindcss` / `autoprefixer` / `postcss` を削除 | 設定を消したので未使用。install が 145 → 72 packages に減った |
 | `svelte.config.js` を追加 | `svelte-check` が vite 設定から svelte plugin を見つけられず `No Svelte configuration found in vite config` で赤かった。`vitePreprocess()` を宣言して解消 |
 
 **Tailwind を消してよいと判断した根拠**（推測ではなく計数した）: 追跡対象の
@@ -107,7 +108,7 @@ MCP エンドポイント（`POST /api/mcp`）と Open-Meteo 連携は `PROJECT.
 
 | step | 変更前 | 変更後 |
 |---|---|---|
-| `npm install` | ok（145 packages） | ok（73 packages） |
+| `npm install` | ok（145 packages） | ok（72 packages） |
 | `npm test` | 1 passed | 1 passed（同じ） |
 | `npm run build` | **FAIL** `Cannot find module '@etzhayyim/design-system/plugin'` | **PASS** |
 | `npm run check` | **FAIL** 1 ERROR | **PASS** 0 ERRORS |
