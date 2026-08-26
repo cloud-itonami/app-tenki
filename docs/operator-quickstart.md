@@ -1,14 +1,16 @@
 # operator quickstart — app-tenki
 
 この repo を初めて触る人が、**何が動いて何が動かないかを自分の手で確かめる**ための
-手順。下の 4 コマンドは 2026-08-19 に実測して全部通っている。
+手順。下のコマンドは 2026-08-26 の Svelte → ClojureScript 移行時に実測して全部
+通っている。
 
-- 実測環境: macOS (darwin 25.3.0) / node **v26.3.0** / npm **11.16.0**
+- 実測環境: macOS (darwin 25.3.0) / node **v26.7.0** / npm **11.19.0** /
+  Clojure CLI **1.12.5.1654**
 - 作業ディレクトリは全ステップ共通:
-  `appview/tenki-weather-component/svelte/`
+  `appview/tenki-weather-component/cljs/`
 
 ```bash
-cd appview/tenki-weather-component/svelte
+cd appview/tenki-weather-component/cljs
 ```
 
 ## step 1 — install
@@ -17,60 +19,56 @@ cd appview/tenki-weather-component/svelte
 npm install
 ```
 
-実測（この repo を fresh clone した直後）: `added 72 packages, and audited 73 packages in 7s`
-/ `found 0 vulnerabilities`。
+実測: `added 129 packages, and audited 130 packages in 11s`。
+`package-lock.json` はこの install で生成済み・コミット済み（旧 Svelte 版に
+あった「install が毎回解決し直す」という既知の欠けはこの移行で解消した）。
 
-`npm warn allow-scripts` が `esbuild` と `fsevents` について出るが、**これは通してよい**
-—— どちらも postinstall を実行しないまま install が完了し、以降の 3 ステップは
-そのまま通る（実測）。`npm approve-scripts` を走らせる必要は無い。
-
-> `package-lock.json` が無いので、この 72 という数は将来ずれる。
-> 数が違っても step 2〜4 が通れば問題ない。
-
-## step 2 — test
+## step 2 — build（app）
 
 ```bash
-npm test
+npx shadow-cljs compile app
 ```
 
-実測: `Test Files 1 passed (1)` / `Tests 1 passed (1)`、約 0.4s。
+実測: `[:app] Build completed. (111 files, 110 compiled, 0 warnings, 28.47s)`。
+`public/js/app.js` が出力される（`public/index.html` が相対パス `js/app.js` で
+読む——これらのページはパスプレフィックス配下で配信されるため、`asset-path`
+は `shadow-cljs.edn` で明示的に相対にしてある）。
 
-> ⚠ **これが緑でもアプリは検査されていない。** `test/tenki.test.ts` の中身は
-> `expect(true).toBe(true)` で、実装を全部消しても緑のままになる。
-> この repo に機能を足すときは、この 1 本を実質のあるテストに置き換えること。
+このマシンは高負荷で、重いビルドは
+`node <superproject root>/scripts/resource-guard.mjs run build -- <command>`
+経由にすること（ロック保持中は exit 2 を返す——失敗ではなく「今は空いていない」
+という意味なので、60 秒待って再試行する）。
 
-## step 3 — build
+## step 3 — test
 
 ```bash
-npm run build
+npx shadow-cljs compile test
+node out/tests.js
 ```
 
-実測: `✓ 109 modules transformed` → `✓ built in 1.08s`、`dist/` に 3 ファイル:
+実測: `[:test] Build completed. (112 files, 111 compiled, 0 warnings, 10.87s)` →
+`Ran 4 tests containing 6 assertions. 0 failures, 0 errors.`
 
-```
-dist/index.html                  0.41 kB │ gzip:  0.27 kB
-dist/assets/index-C-zwCK5o.css   0.24 kB │ gzip:  0.21 kB
-dist/assets/index-Ch2YJEZC.js   28.29 kB │ gzip: 10.88 kB
-```
+> `test/tenki/app_test.cljs` は re-frame の `:initialize-db` イベントと
+> `:heading` / `:message` サブスクリプションを実際に検査する——初期値・上書き・
+> db 状態からの読み出しをそれぞれ assert している。旧 Svelte 版の
+> `test/tenki.test.ts`（`expect(true).toBe(true)` の恒真 placeholder）とは違い、
+> 実装を壊すと赤くなる。
 
-## step 4 — 型・テンプレート検査
+`re-frame: Subscribe was called outside of a reactive context.` という警告が
+テスト実行時に出るが、これは `cljs.test` の中で `rf/subscribe` を reagent の
+render 外から直接 deref しているために出る re-frame 自身の情報警告であり、
+テスト結果（0 failures, 0 errors）には影響しない。
+
+## step 4（任意）— dev サーバで実際に見る
 
 ```bash
-npm run check
+npx shadow-cljs watch app
 ```
 
-実測: `COMPLETED 112 FILES 0 ERRORS 0 WARNINGS 0 FILES_WITH_PROBLEMS`。
-
-## step 5（任意）— dev サーバで実際に見る
-
-```bash
-npm run dev -- --port 5199
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5199/      # => 200
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5199/src/main.ts  # => 200
-```
-
-実測: どちらも `200`。ブラウザで開くと見出し 1 行の scaffold が出る（天気は出ない
-—— 実装が無いため）。確認したら `Ctrl-C` で止める。
+ブラウザで `public/index.html` を開くと、jp-go-dds（DADS）の見出し 1 行 +
+状態を示す段落 1 行が出る（天気は出ない——実装が無いため）。確認したら
+`Ctrl-C` で止める。
 
 ## 書けない手順（実演済み）
 
@@ -86,32 +84,16 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5199/src/main.ts  # =>
 MCP エンドポイント（`POST /api/mcp`）と Open-Meteo 連携は `PROJECT.jsonld` /
 `appview/README.md` が宣言しているが**実装が無い**ので、叩く手順を書けない。
 
-## この repo に加えた変更（2026-08-19）
+## この repo に加えた変更（2026-08-26、Svelte → ClojureScript 移行）
 
-上の step 3 と step 4 は、**この日まで両方とも赤だった**。抽出時に取り残された
-設定が原因で、機能ではないので撤去した。
+`appview/tenki-weather-component/svelte/`（Svelte 5 + Vite + vitest）を削除し、
+`appview/tenki-weather-component/cljs/`（shadow-cljs + reagent 1.2.0 +
+re-frame 1.4.3 + jp-go-dds）に置き換えた。ワークスペース標準の UI スタックへの
+揃えが目的で、機能は増減していない（見出し 1 行 + 段落 1 行のまま）。
 
 | 変更 | 理由 |
 |---|---|
-| `tailwind.config.js` を削除 | 1 行目で `@etzhayyim/design-system/plugin` を import していたが、この package は `package.json` に無く npm にも無い（404）。`content` glob も抽出前の monorepo パス `../../../../../packages/ts/design-system/dist/**` を指していて解決しない |
-| `postcss.config.js` を削除 | `tailwindcss` を読み込むためだけの設定。上を消すと役目が無い |
-| `package.json` から `tailwindcss` / `autoprefixer` / `postcss` を削除 | 設定を消したので未使用。install が 145 → 72 packages に減った |
-| `svelte.config.js` を追加 | `svelte-check` が vite 設定から svelte plugin を見つけられず `No Svelte configuration found in vite config` で赤かった。`vitePreprocess()` を宣言して解消 |
-
-**Tailwind を消してよいと判断した根拠**（推測ではなく計数した）: 追跡対象の
-ソース 7 ファイル（`.svelte` / `.ts` / `.html` / `.css`、`node_modules` 除く）を
-`@tailwind` / `@apply` / `class=` / `design-system` で検索して **0 件**。
-`src/App.svelte` は素の `<style>` で書かれており、Tailwind のユーティリティを
-1 つも使っていなかった。
-
-変更前後の実測（同じコマンドを抽出直後の tree でも走らせて比べた）:
-
-| step | 変更前 | 変更後 |
-|---|---|---|
-| `npm install` | ok（145 packages） | ok（72 packages） |
-| `npm test` | 1 passed | 1 passed（同じ） |
-| `npm run build` | **FAIL** `Cannot find module '@etzhayyim/design-system/plugin'` | **PASS** |
-| `npm run check` | **FAIL** 1 ERROR | **PASS** 0 ERRORS |
-
-デザインシステムを本当に繋ぐときは、`@etzhayyim/design-system` を供給する
-workspace を用意した上で、この 4 行を戻すこと。
+| `.svelte` / `.ts` / `vite.config.ts` / `vitest.config.ts` / `svelte.config.js` 一式を削除 | ワークスペース標準（shadow-cljs + reagent + re-frame + jp-go-dds、CLAUDE.md 記載）に揃える |
+| `src/tenki/app.cljs` を新規作成 | re-frame の `reg-event-db` / `reg-sub` + jp-go-dds hiccup の reagent view。`main` が `reagent.dom/render` でマウント |
+| `test/tenki/app_test.cljs` を新規作成 | 恒真 placeholder だった旧テストを、event/sub を実際に検査する `cljs.test` に置き換え |
+| `public/index.html` を `jp-go-dds.page/->page` で生成 | DADS の vendored CSS を inline した SSR shell。`js/app.js` は相対パス（asset-path が path prefix 配下でも壊れないように） |
