@@ -23,6 +23,17 @@ jp-go-dds）の appview scaffold 一式だけで、天気の実装は無い。**
 もう正しくないので「ClojureScript entry scaffold after Svelte migration.」に
 更新した——機能はどちらも変わらず、見出し 1 行 + 状態を示す段落 1 行だけ。
 
+repo ルートにはもう 1 本、パッケージの外から見る検査がある:
+
+| ファイル | 中身 |
+|---|---|
+| `test/appview_wiring_test.cljs` | ビルド設定・配信される文書・そこへマウントするコードを**繋いでいる文字列**の突き合わせ。依存ゼロの nbb で走り、`npm install` もビルドも要らない。パッケージの中に置けないのは、不変条件がどれも 2 ファイルにまたがっていて、片方だけを持つファイルが無いため |
+
+上のパッケージ内 suite を壊さずに通るが画面が空になる変更（module 名の変更、
+`:output-dir` の移動、マウント id の改名、`:ns-regexp` に合わない test の追加など）を
+捕まえる。exit は **0 / 1 / 2** の 3 値で、**2 は「測れなかった」**——入力が読めなかった
+実行が、読んで問題が無かった実行と同じ値を返さないようにしてある。
+
 手順は **[docs/operator-quickstart.md](docs/operator-quickstart.md)**。
 
 ## 宣言と実体のずれ（未解消）
