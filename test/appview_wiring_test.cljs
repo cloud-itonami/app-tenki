@@ -1,0 +1,325 @@
+#!/usr/bin/env nbb
+;; appview wiring — the seams where the build stays green and the page goes blank.
+;;
+;; The package under appview/tenki-weather-component/cljs already has a cljs.test
+;; suite (test/tenki/app_test.cljs). That suite exercises the re-frame plumbing
+;; inside one namespace. It cannot see the joins BETWEEN the build config, the
+;; shipped document and the code that mounts into it, because every one of those
+;; joins is a string repeated in two files that nothing compares.
+;;
+;; Each join below has the same failure shape: change one side, and
+;;   - `shadow-cljs compile app` still succeeds (nothing it checks was violated),
+;;   - `node out/tests.js` still prints "0 failures, 0 errors",
+;;   - and the page renders nothing.
+;;
+;; That is the shape CLAUDE.md names: a thing that was never measured returning
+;; the same value as a thing that was measured and found fine. So this file lives
+;; at the repo root rather than inside the package -- the invariants are ABOUT the
+;; package's relationship to the document it ships, and no file inside it owns
+;; both sides.
+;;
+;; Exit codes are three-valued on purpose:
+;;   0  every invariant checked and held        (prints the green marker)
+;;   1  an invariant was checked and violated
+;;   2  REFUSED -- could not measure. Never 0, so "I could not look" can never be
+;;      read as "I looked and it was fine".
+;;
+;; Run:  nbb test/appview_wiring_test.cljs [<repo-root>]
+
+(ns appview-wiring-test
+  (:require [clojure.string :as str]
+            [clojure.edn :as edn]
+            ["fs" :as fs]
+            ["path" :as path]))
+
+;; ---------------------------------------------------------------- reporting
+
+(def ^:private checked (atom 0))
+(def ^:private failures (atom []))
+(def ^:private skips (atom []))
+(def ^:private refusals (atom []))
+
+(defn- ok! [reason detail]
+  (swap! checked inc)
+  (println (str "  OK    " reason (when detail (str "  -- " detail)))))
+
+(defn- fail! [reason detail]
+  (swap! checked inc)
+  (swap! failures conj reason)
+  (println (str "  FAIL  " reason "  -- " detail)))
+
+(defn- check! [reason ok? detail]
+  (if ok? (ok! reason detail) (fail! reason detail)))
+
+(defn- skip! [reason why]
+  (swap! skips conj reason)
+  (println (str "  SKIP  " reason "  -- " why)))
+
+(defn- refuse! [why]
+  (swap! refusals conj why)
+  (println (str "  REFUSED  " why)))
+
+;; ---------------------------------------------------------------- io
+
+(defn- read-text [p]
+  (try (fs/readFileSync p "utf8") (catch :default _ nil)))
+
+;; Read EDN and insist the file is exactly one form.
+;;
+;; `edn/read-string` returns the FIRST form and silently discards the rest, so a
+;; map that closes early with garbage trailing it reads as clean. Wrapping the
+;; text in a vector forces the reader to consume all of it and lets us count.
+(defn- read-edn [p]
+  (if-let [t (read-text p)]
+    (let [r (try {:forms (edn/read-string (str "[" t "\n]"))}
+                 (catch :default e {:err (str "EDN reader: " (.-message e))}))]
+      (cond
+        (:err r) {:why (str p ": " (:err r))}
+        (not= 1 (count (:forms r)))
+        {:why (str p ": expected exactly 1 EDN form, got " (count (:forms r)))}
+        :else {:value (first (:forms r))}))
+    {:why (str p ": missing or unreadable")}))
+
+(defn- read-json [p]
+  (if-let [t (read-text p)]
+    (try {:value (js->clj (js/JSON.parse t) :keywordize-keys true)}
+         (catch :default e {:why (str p ": JSON parse: " (.-message e))}))
+    {:why (str p ": missing or unreadable")}))
+
+(def ^:private skip-dirs #{"node_modules" ".git" "out" ".shadow-cljs" ".cpcache"})
+
+(defn- walk [abs rel]
+  (reduce
+   (fn [acc ent]
+     (let [nm (.-name ent)
+           child (if (seq rel) (str rel "/" nm) nm)]
+       (cond
+         (skip-dirs nm) acc
+         (.isDirectory ent) (into acc (walk (path/join abs nm) child))
+         :else (conj acc child))))
+   []
+   (try (fs/readdirSync abs #js {:withFileTypes true}) (catch :default _ #js []))))
+
+;; ---------------------------------------------------------------- helpers
+
+(defn- ns->path [ns-sym]
+  (-> (str ns-sym) (str/replace "-" "_") (str/replace "." "/")))
+
+(defn- ns-of [source-text]
+  (some-> (re-find #"\(ns\s+([A-Za-z0-9_.*+!?<>=/$%&|-]+)" source-text) second))
+
+;; ---------------------------------------------------------------- main
+
+(defn -main [& args]
+  (let [root (or (first (remove #(str/starts-with? % "--") args)) (.cwd js/process))
+        files (walk root "")]
+    (println (str "appview-wiring: root=" root))
+
+    ;; ---- locate the package by its build config, rather than hardcoding a path
+    (let [shadow-files (filterv #(= "shadow-cljs.edn" (last (str/split % #"/"))) files)]
+      (cond
+        (empty? files)
+        (refuse! "walked the tree and found 0 files")
+
+        (empty? shadow-files)
+        (refuse! "no shadow-cljs.edn anywhere in the tree; there is no cljs build to check")
+
+        (< 1 (count shadow-files))
+        (refuse! (str "expected exactly 1 shadow-cljs.edn, found " (count shadow-files)
+                      ": " (str/join ", " shadow-files)
+                      " -- which build ships the document is ambiguous"))
+
+        :else
+        (let [shadow-rel (first shadow-files)
+              pkg (let [d (str/join "/" (butlast (str/split shadow-rel #"/")))]
+                    (if (seq d) d "."))
+              pkg-abs (path/join root pkg)
+              in-pkg (fn [f] (if (= pkg ".") f (str pkg "/" f)))
+              shadow (read-edn (path/join root shadow-rel))
+              pkgjson (read-json (path/join pkg-abs "package.json"))]
+          (println (str "appview-wiring: package=" pkg))
+          (cond
+            (:why shadow) (refuse! (:why shadow))
+            (:why pkgjson) (refuse! (:why pkgjson))
+            :else
+            (let [cfg (:value shadow)
+                  pj (:value pkgjson)
+                  app-build (get-in cfg [:builds :app])
+                  test-build (get-in cfg [:builds :test])]
+              (cond
+                (nil? app-build)
+                (refuse! (str shadow-rel ": no :builds :app -- nothing describes the shipped bundle"))
+
+                (nil? test-build)
+                (refuse! (str shadow-rel ": no :builds :test -- nothing describes the test bundle"))
+
+                :else
+                (let [asset-path (:asset-path app-build)
+                      output-dir (:output-dir app-build)
+                      modules (:modules app-build)
+                      init-fn (get-in modules [:app :init-fn])
+                      ;; documents = html the package actually ships
+                      docs (filterv #(and (str/starts-with? % (str pkg "/"))
+                                          (str/ends-with? (str/lower-case %) ".html"))
+                                    files)
+                      docs-with-script
+                      (filterv (fn [d]
+                                 (when-let [t (read-text (path/join root d))]
+                                   (boolean (re-find #"<script[^>]*\ssrc=" t))))
+                               docs)]
+
+                  ;; ---- 1. one document, one shell (CLAUDE.md: single-page app)
+                  ;;
+                  ;; Two shells is not a hypothetical: kami-app-nle and kami-app-daw
+                  ;; each shipped two, one of them kept link'ing a stylesheet that had
+                  ;; already been deleted, and it served unstyled for as long as nobody
+                  ;; opened that second page.
+                  (check! ":wiring/exactly-one-document"
+                          (= 1 (count docs-with-script))
+                          (str "documents loading a script: " (count docs-with-script)
+                               " " (pr-str docs-with-script)))
+
+                  ;; ---- 2. asset-path stays relative
+                  ;;
+                  ;; docs/operator-quickstart.md records this as deliberate: these
+                  ;; pages are served under a path prefix, so an absolute "/js" 404s
+                  ;; everywhere except the root -- and works fine in local testing,
+                  ;; which is what makes it survive review.
+                  (check! ":wiring/asset-path-must-be-relative"
+                          (and (string? asset-path) (not (str/starts-with? asset-path "/")))
+                          (str ":asset-path = " (pr-str asset-path)))
+
+                  (if (not= 1 (count docs-with-script))
+                    (do (skip! ":wiring/bundle-src-mismatch" "no single document to compare against")
+                        (skip! ":wiring/output-dir-not-under-document" "no single document to compare against")
+                        (skip! ":wiring/mount-id-absent-from-document" "no single document to compare against"))
+                    (let [doc-rel (first docs-with-script)
+                          doc-text (read-text (path/join root doc-rel))
+                          ;; :output-dir in shadow-cljs.edn is package-relative, so
+                          ;; resolve the document into the same frame before comparing.
+                          doc-in-pkg (if (= pkg ".")
+                                       doc-rel
+                                       (subs doc-rel (inc (count pkg))))
+                          doc-dir (str/join "/" (butlast (str/split doc-in-pkg #"/")))
+                          srcs (mapv second (re-seq #"<script[^>]*\ssrc=\"([^\"]+)\"" doc-text))
+                          module-name (name (first (keys modules)))
+                          expected-src (str asset-path "/" module-name ".js")]
+
+                      ;; ---- 3. the document asks for the file the build emits
+                      ;;
+                      ;; Rename the module key and shadow-cljs happily emits
+                      ;; public/js/<newname>.js while the document keeps asking for
+                      ;; app.js. Compile is green, tests are green, the browser 404s.
+                      (check! ":wiring/bundle-src-mismatch"
+                              (some #(= expected-src %) srcs)
+                              (str "document " doc-in-pkg " loads " (pr-str srcs)
+                                   "; the :app build emits " (pr-str expected-src)))
+
+                      ;; ---- 4. and that file lands where the document resolves it
+                      (check! ":wiring/output-dir-not-under-document"
+                              (= output-dir (str doc-dir "/" asset-path))
+                              (str ":output-dir = " (pr-str output-dir)
+                                   "; document at " doc-in-pkg
+                                   " resolves " (pr-str asset-path)
+                                   " to " (pr-str (str doc-dir "/" asset-path))))
+
+                      ;; ---- 5. the mount point both sides agree on
+                      (if-not init-fn
+                        (skip! ":wiring/mount-id-absent-from-document" "no :init-fn to locate the source from")
+                        (let [ns-sym (symbol (namespace (symbol (str init-fn))))
+                              src-rel (in-pkg (str "src/" (ns->path ns-sym) ".cljs"))
+                              src-text (read-text (path/join root src-rel))]
+                          (check! ":wiring/init-fn-namespace-has-no-source-file"
+                                  (some? src-text)
+                                  (str ":init-fn " (pr-str init-fn) " expects " src-rel "; present=" (some? src-text)))
+                          (if-not src-text
+                            (skip! ":wiring/mount-id-absent-from-document"
+                                   (str "cannot read " src-rel))
+                            (let [mount-id (second (re-find #"getElementById\s+\"([^\"]+)\"" src-text))]
+                              (if-not mount-id
+                                (skip! ":wiring/mount-id-absent-from-document"
+                                       (str src-rel " does not call getElementById with a literal id"))
+                                ;; Rename the id on either side and render() gets null.
+                                ;; reagent logs nothing useful, the build is green, the
+                                ;; cljs.test suite never touches the DOM, and the page
+                                ;; keeps showing the "loading..." placeholder forever.
+                                (check! ":wiring/mount-id-absent-from-document"
+                                        (boolean (re-find (re-pattern (str "id=\"" mount-id "\"")) doc-text))
+                                        (str src-rel " mounts into id=" (pr-str mount-id)
+                                             "; " doc-in-pkg " carries that id: " (boolean (re-find (re-pattern (str "id=\"" mount-id "\"")) doc-text)))))))))))
+
+                  ;; ---- 6. `npm test` runs the file the test build writes
+                  ;;
+                  ;; Point :output-to somewhere else and `npm test` compiles the new
+                  ;; file, then runs the OLD one still sitting in out/. It passes. It
+                  ;; is testing a build from before your change.
+                  (let [test-script (get-in pj [:scripts :test])
+                        output-to (:output-to test-build)]
+                    (if-not (string? test-script)
+                      (fail! ":wiring/npm-test-does-not-run-shadow-test-output"
+                             "package.json has no scripts.test")
+                      (check! ":wiring/npm-test-does-not-run-shadow-test-output"
+                              (and (string? output-to)
+                                   (str/includes? test-script output-to))
+                              (str "scripts.test = " (pr-str test-script)
+                                   "; :builds :test :output-to = " (pr-str output-to)))))
+
+                  ;; ---- 7. every test file is actually reachable by the runner
+                  ;;
+                  ;; :ns-regexp decides which namespaces get compiled INTO the test
+                  ;; bundle. A test file whose ns does not match is not a failing
+                  ;; test -- it is not a test at all. The suite prints its usual
+                  ;; "Ran N tests ... 0 failures" and the file is never executed.
+                  (let [ns-regexp (:ns-regexp test-build)
+                        test-files (filterv #(and (str/starts-with? % (in-pkg "test/"))
+                                                  (or (str/ends-with? % ".cljs")
+                                                      (str/ends-with? % ".cljc")))
+                                            files)]
+                    (cond
+                      (not (string? ns-regexp))
+                      (refuse! (str shadow-rel ": :builds :test has no :ns-regexp; "
+                                    "cannot tell which namespaces the runner compiles"))
+
+                      ;; evidence floor: 0 test files scanned is not a clean result
+                      (empty? test-files)
+                      (refuse! (str "found 0 test sources under " (in-pkg "test/")
+                                    " -- a coverage claim over an empty set is not a pass"))
+
+                      :else
+                      (let [re (re-pattern ns-regexp)
+                            unmatched (vec (for [f test-files
+                                                 :let [t (read-text (path/join root f))
+                                                       n (some-> t ns-of)]
+                                                 :when (or (nil? n) (not (re-find re n)))]
+                                             (str f " (ns " (pr-str n) ")")))]
+                        (println (str "  SCANNED test sources: " (count test-files)))
+                        (check! ":wiring/test-ns-not-matched-by-ns-regexp"
+                                (empty? unmatched)
+                                (str ":ns-regexp " (pr-str ns-regexp)
+                                     "; namespaces it never compiles: " (count unmatched) (when (seq unmatched) (str " " (str/join ", " unmatched)))))))))))))))
+
+    ;; ---------------------------------------------------------------- verdict
+    (println (str "CHECKED\t" @checked))
+    (cond
+      (seq @refusals)
+      (do (println (str "appview-wiring: REFUSED (" (count @refusals) ") -- "
+                        "could not measure; refusing to report a pass"))
+          (.exit js/process 2))
+
+      ;; a checked-nothing run is a refusal, not a pass
+      (zero? @checked)
+      (do (println "appview-wiring: REFUSED -- 0 invariants checked")
+          (.exit js/process 2))
+
+      (seq @failures)
+      (do (println (str "appview-wiring: FAIL (" (count @failures) ") "
+                        (str/join " " @failures)))
+          (.exit js/process 1))
+
+      :else
+      (do (when (seq @skips)
+            (println (str "appview-wiring: " (count @skips) " skipped")))
+          (println "appview-wiring: OK")
+          (.exit js/process 0)))))
+
+(apply -main *command-line-args*)

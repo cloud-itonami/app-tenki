@@ -60,6 +60,44 @@ node out/tests.js
 render 外から直接 deref しているために出る re-frame 自身の情報警告であり、
 テスト結果（0 failures, 0 errors）には影響しない。
 
+## step 3.5 — wiring check（依存ゼロ、repo ルート）
+
+```bash
+cd <repo root>
+nbb test/appview_wiring_test.cljs
+```
+
+実測: `CHECKED	8` → `appview-wiring: OK`（exit 0）。`npm install` も
+shadow-cljs のビルドも要らない——committed なファイルだけを読む。
+
+step 3 の `cljs.test` suite が見られないものを見る。あの suite は
+`tenki.app` **1 名前空間の中**を検査するが、ビルド設定・配信される文書・
+そこへマウントするコードを**繋いでいる文字列**は 2 つのファイルに重複して
+書かれていて、誰も突き合わせていない。片側を変えると:
+
+- `shadow-cljs compile app` は通る（違反した検査が無い）
+- `node out/tests.js` も `0 failures, 0 errors` を出す
+- そして**画面には何も出ない**
+
+検査している 8 つ（どれも「壊すと赤くなる」ことを実測済み）:
+
+| 不変条件 | 壊れると |
+|---|---|
+| `:wiring/exactly-one-document` | shell が 2 枚に割れ、片方だけが更新に追随しなくなる |
+| `:wiring/asset-path-must-be-relative` | path prefix 配下で bundle が 404（ルート直下では動くので気付けない） |
+| `:wiring/bundle-src-mismatch` | module 名を変えると `js/<新名>.js` が出るのに文書は `js/app.js` を要求し続ける |
+| `:wiring/output-dir-not-under-document` | 出力先を移すと文書からの相対解決が外れる |
+| `:wiring/init-fn-namespace-has-no-source-file` | `:init-fn` が実在しない ns を指す |
+| `:wiring/mount-id-absent-from-document` | `getElementById` の id と文書の id がずれ、`render` が null に描く |
+| `:wiring/npm-test-does-not-run-shadow-test-output` | `:output-to` を変えると `npm test` は**前のビルドの成果物**を走らせて緑を出す |
+| `:wiring/test-ns-not-matched-by-ns-regexp` | `:ns-regexp` に合わない test ファイルは**一度も実行されない**のに suite は緑 |
+
+exit は 3 値。**0 = 全部検査して通った / 1 = 検査して違反があった /
+2 = REFUSED（測れなかった）**。2 が要るのは、入力が読めなかった実行と
+読んで問題が無かった実行が同じ値を返すと、沈黙が緑として積み上がるため
+（実測: shadow-cljs.edn が 2 form になっている / `:ns-regexp` が無い /
+`test/` に 1 ファイルも無い、の 3 つはどれも exit 2 を返す）。
+
 ## step 4（任意）— dev サーバで実際に見る
 
 ```bash
