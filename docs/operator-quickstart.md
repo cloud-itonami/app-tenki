@@ -64,7 +64,7 @@ render 外から直接 deref しているために出る re-frame 自身の情�
 
 ```bash
 cd <repo root>
-nbb test/appview_wiring_test.cljs
+nbb test/appview_wiring_test.cljk
 ```
 
 実測: `CHECKED	8` → `appview-wiring: OK`（exit 0）。`npm install` も
