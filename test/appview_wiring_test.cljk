@@ -1,4 +1,4 @@
-#!/usr/bin/env nbb
+#!/usr/bin/env kbb
 ;; appview wiring — the seams where the build stays green and the page goes blank.
 ;;
 ;; The package under appview/tenki-weather-component/cljs already has a cljs.test
@@ -8,7 +8,7 @@
 ;; joins is a string repeated in two files that nothing compares.
 ;;
 ;; Each join below has the same failure shape: change one side, and
-;;   - `shadow-cljs compile app` still succeeds (nothing it checks was violated),
+;;   - `amu compile --target wasm32-browser app` still succeeds (nothing it checks was violated),
 ;;   - `node out/tests.js` still prints "0 failures, 0 errors",
 ;;   - and the page renders nothing.
 ;;
@@ -24,7 +24,7 @@
 ;;   2  REFUSED -- could not measure. Never 0, so "I could not look" can never be
 ;;      read as "I looked and it was fine".
 ;;
-;; Run:  nbb test/appview_wiring_test.cljk [<repo-root>]
+;; Run:  kbb --backend sci test/appview_wiring_test.cljk [<repo-root>]
 
 (ns appview-wiring-test
   (:require [clojure.string :as str]

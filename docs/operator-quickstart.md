@@ -26,7 +26,7 @@ npm install
 ## step 2 — build（app）
 
 ```bash
-npx shadow-cljs compile app
+amu compile --target wasm32-browser app
 ```
 
 実測: `[:app] Build completed. (111 files, 110 compiled, 0 warnings, 28.47s)`。
@@ -42,7 +42,7 @@ npx shadow-cljs compile app
 ## step 3 — test
 
 ```bash
-npx shadow-cljs compile test
+amu compile --target wasm32-browser test
 node out/tests.js
 ```
 
@@ -64,7 +64,7 @@ render 外から直接 deref しているために出る re-frame 自身の情�
 
 ```bash
 cd <repo root>
-nbb test/appview_wiring_test.cljk
+kbb --backend sci test/appview_wiring_test.cljk
 ```
 
 実測: `CHECKED	8` → `appview-wiring: OK`（exit 0）。`npm install` も
@@ -75,7 +75,7 @@ step 3 の `cljs.test` suite が見られないものを見る。あの suite �
 そこへマウントするコードを**繋いでいる文字列**は 2 つのファイルに重複して
 書かれていて、誰も突き合わせていない。片側を変えると:
 
-- `shadow-cljs compile app` は通る（違反した検査が無い）
+- `amu compile --target wasm32-browser app` は通る（違反した検査が無い）
 - `node out/tests.js` も `0 failures, 0 errors` を出す
 - そして**画面には何も出ない**
 
@@ -101,7 +101,7 @@ exit は 3 値。**0 = 全部検査して通った / 1 = 検査して違反が�
 ## step 4（任意）— dev サーバで実際に見る
 
 ```bash
-npx shadow-cljs watch app
+amu compile --target wasm32-browser app
 ```
 
 ブラウザで `public/index.html` を開くと、jp-go-dds（DADS）の見出し 1 行 +
