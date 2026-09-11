@@ -24,7 +24,7 @@
 ;;   2  REFUSED -- could not measure. Never 0, so "I could not look" can never be
 ;;      read as "I looked and it was fine".
 ;;
-;; Run:  nbb test/appview_wiring_test.cljs [<repo-root>]
+;; Run:  nbb test/appview_wiring_test.cljk [<repo-root>]
 
 (ns appview-wiring-test
   (:require [clojure.string :as str]
