@@ -227,7 +227,7 @@
                       (if-not init-fn
                         (skip! ":wiring/mount-id-absent-from-document" "no :init-fn to locate the source from")
                         (let [ns-sym (symbol (namespace (symbol (str init-fn))))
-                              src-rel (in-pkg (str "src/" (ns->path ns-sym) ".cljs"))
+                              src-rel (in-pkg (str "src/" (ns->path ns-sym) ".cljk"))
                               src-text (read-text (path/join root src-rel))]
                           (check! ":wiring/init-fn-namespace-has-no-source-file"
                                   (some? src-text)
@@ -272,7 +272,7 @@
                   ;; "Ran N tests ... 0 failures" and the file is never executed.
                   (let [ns-regexp (:ns-regexp test-build)
                         test-files (filterv #(and (str/starts-with? % (in-pkg "test/"))
-                                                  (or (str/ends-with? % ".cljs")
+                                                  (or (str/ends-with? % ".cljk")
                                                       (str/ends-with? % ".cljc")))
                                             files)]
                     (cond
