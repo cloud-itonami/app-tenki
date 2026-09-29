@@ -12,7 +12,7 @@
 ;;   - `node out/tests.js` still prints "0 failures, 0 errors",
 ;;   - and the page renders nothing.
 ;;
-;; That is the shape CLAUDE.md names: a thing that was never measured returning
+;; That is the shape AGENTS.md names: a thing that was never measured returning
 ;; the same value as a thing that was measured and found fine. So this file lives
 ;; at the repo root rather than inside the package -- the invariants are ABOUT the
 ;; package's relationship to the document it ships, and no file inside it owns
@@ -168,7 +168,7 @@
                                    (boolean (re-find #"<script[^>]*\ssrc=" t))))
                                docs)]
 
-                  ;; ---- 1. one document, one shell (CLAUDE.md: single-page app)
+                  ;; ---- 1. one document, one shell (AGENTS.md: single-page app)
                   ;;
                   ;; Two shells is not a hypothetical: kami-app-nle and kami-app-daw
                   ;; each shipped two, one of them kept link'ing a stylesheet that had

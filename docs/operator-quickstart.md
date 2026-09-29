@@ -131,7 +131,7 @@ re-frame 1.4.3 + jp-go-dds）に置き換えた。ワークスペース標準の
 
 | 変更 | 理由 |
 |---|---|
-| `.svelte` / `.ts` / `vite.config.ts` / `vitest.config.ts` / `svelte.config.js` 一式を削除 | ワークスペース標準（shadow-cljs + reagent + re-frame + jp-go-dds、CLAUDE.md 記載）に揃える |
+| `.svelte` / `.ts` / `vite.config.ts` / `vitest.config.ts` / `svelte.config.js` 一式を削除 | ワークスペース標準（shadow-cljs + reagent + re-frame + jp-go-dds、AGENTS.md 記載）に揃える |
 | `src/tenki/app.cljs` を新規作成 | re-frame の `reg-event-db` / `reg-sub` + jp-go-dds hiccup の reagent view。`main` が `reagent.dom/render` でマウント |
 | `test/tenki/app_test.cljs` を新規作成 | 恒真 placeholder だった旧テストを、event/sub を実際に検査する `cljs.test` に置き換え |
 | `public/index.html` を `jp-go-dds.page/->page` で生成 | DADS の vendored CSS を inline した SSR shell。`js/app.js` は相対パス（asset-path が path prefix 配下でも壊れないように） |
